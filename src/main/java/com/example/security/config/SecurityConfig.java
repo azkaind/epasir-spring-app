@@ -68,6 +68,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**", "/api/public/**",
                                  "/actuator/health").permitAll()
 
+                // ── File view — permitAll agar <img src> di FE Angular
+                //    bisa diakses langsung tanpa Authorization header
+                //    (setara GET /files?path=... di sistem Go lama)
+                .requestMatchers("/api/files/view").permitAll()
+
                 // ── User Management (permission granular via @PreAuthorize) ─
                 // URL-level hanya cek login; detail permission di controller
                 .requestMatchers("/api/users/**").authenticated()
@@ -76,6 +81,12 @@ public class SecurityConfig {
 
                 // ── BPD / Pengajuan Top-Up  ─────────────────────────────
                 .requestMatchers("/api/bprd/**").authenticated()
+
+                // ── Master data pendukung topup (Wajib Pajak, Komoditas, Kartu) ─
+                .requestMatchers("/api/master/**").authenticated()
+
+                // ── File upload (butuh login) — /view sudah di atas ─────
+                .requestMatchers("/api/files/**").authenticated()
 
                 // ── Profile (semua user login) ──────────────────────────────
                 .requestMatchers("/api/profile").authenticated()

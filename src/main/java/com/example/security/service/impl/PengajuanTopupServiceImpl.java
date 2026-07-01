@@ -12,6 +12,7 @@ import com.example.security.entity.PengajuanTopupDetail;
 import com.example.security.exception.BadRequestException;
 import com.example.security.exception.UserNotFoundException;
 import com.example.security.external.BankJatimClient;
+import com.example.security.repository.KartuRepository;
 import com.example.security.repository.PengajuanTopupDetailRepository;
 import com.example.security.repository.PengajuanTopupQueryRepository;
 import com.example.security.repository.PengajuanTopupRepository;
@@ -39,6 +40,7 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
     private final PengajuanTopupDetailRepository detailRepository;
     private final PengajuanTopupQueryRepository  queryRepository;
     private final BankJatimClient                bankJatimClient;
+    private final KartuRepository                kartuRepository;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -273,18 +275,31 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
         return details;
     }
 
+    /**
+     * Update saldo_bprd di m_kartu saat pengajuan topup dibuat.
+     *
+     * Menggunakan KartuRepository.addSaldoBprd (saldo_bprd += nominal)
+     * bukan updateSaldoBprd lama di detailRepository (saldo_bprd = nilai baru),
+     * agar akumulasi saldo benar ketika satu kartu punya lebih dari satu pengajuan.
+     *
+     * Konsisten dengan fungsi service.go lama: tidak rollback seluruh transaksi
+     * jika satu kartu gagal diupdate.
+     */
     private void updateSaldoBprdBulk(
             List<com.example.security.dto.request.PengajuanTopupDetailRequest> details,
             String updatedBy) {
         LocalDateTime now = LocalDateTime.now();
         for (var d : details) {
+            if (d.getNoRfid() == null || d.getNoRfid().isBlank()) {
+                log.warn("Skip update saldo_bprd: noRfid kosong untuk nominal={}", d.getNominal());
+                continue;
+            }
             try {
-                detailRepository.updateSaldoBprd(d.getNoRfid(), d.getNominal(), now, updatedBy);
+                kartuRepository.addSaldoBprd(d.getNoRfid(), d.getNominal(), now, updatedBy);
+                log.debug("saldo_bprd +{} untuk noRfid={}", d.getNominal(), d.getNoRfid());
             } catch (Exception e) {
-                log.error("Gagal update saldo_bprd untuk noRfid={}: {}",
-                          d.getNoRfid(), e.getMessage());
-                // Tidak melempar exception agar satu kegagalan tidak
-                // rollback seluruh transaksi — konsisten dengan perilaku sistem Go.
+                log.error("Gagal update saldo_bprd noRfid={}: {}", d.getNoRfid(), e.getMessage());
+                // Tidak melempar exception — konsisten dengan perilaku sistem Go.
             }
         }
     }
