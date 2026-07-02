@@ -11,12 +11,13 @@ import java.util.UUID;
 @Entity
 @Table(name = "m_wajib_pajak")
 @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
-@SQLRestriction("is_deleted = false")
+@SQLRestriction("is_deleted = false OR is_deleted IS NULL")
 public class WajibPajak {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(columnDefinition = "varchar(36)")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
     private UUID id;
 
     @Column(name = "kode_bprd", length = 100)

@@ -12,6 +12,7 @@ public interface WajibPajakRepository
         extends JpaRepository<WajibPajak, UUID>, JpaSpecificationExecutor<WajibPajak> {
 
     /** Untuk endpoint /all — dropdown FE */
+    @org.springframework.data.jpa.repository.Query("SELECT w FROM WajibPajak w WHERE (w.isDeleted = false OR w.isDeleted IS NULL) ORDER BY w.namaWp ASC")
     List<WajibPajak> findAllByIsDeletedFalseOrderByNamaWpAsc();
 
     Optional<WajibPajak> findByKodeBprdAndIsDeletedFalse(String kodeBprd);

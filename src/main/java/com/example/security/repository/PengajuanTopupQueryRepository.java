@@ -57,7 +57,7 @@ public class PengajuanTopupQueryRepository {
                 COALESCE(SUM(CASE WHEN status_approve_bjtm = '2' THEN 1 ELSE 0 END), 0) AS jml_sudah_topup
             FROM public.t_pengajuan_topup_detail
             GROUP BY id_pengajuan_topup
-        ) dt ON dt.id_pengajuan_topup = pt.id::text
+        ) dt ON dt.id_pengajuan_topup = pt.id
         """;
 
     private static final String SELECT_DETAIL = """
@@ -207,7 +207,7 @@ public class PengajuanTopupQueryRepository {
         }
         if (startDate != null && !startDate.isBlank()
                 && endDate != null && !endDate.isBlank()) {
-            sb.append(" AND pt.tanggal >= :startDate AND pt.tanggal <= :endDate ");
+            sb.append(" AND pt.tanggal >= CAST(:startDate AS date) AND pt.tanggal <= CAST(:endDate AS date) ");
         }
         if (idWp != null && !idWp.isBlank()) {
             sb.append(" AND pt.id_wp = :idWp ");
