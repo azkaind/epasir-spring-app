@@ -29,6 +29,7 @@ public class PengajuanTopup {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(columnDefinition = "varchar(36)")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
     private UUID id;
 
     @Column(name = "tanggal")
@@ -79,13 +80,7 @@ public class PengajuanTopup {
     @Builder.Default
     private Boolean isDeleted = false;
 
-    // ── Relasi ke detail ──────────────────────────────────────────────────
-    @OneToMany(mappedBy = "idPengajuanTopup",
-               cascade = CascadeType.ALL,
-               orphanRemoval = true,
-               fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<PengajuanTopupDetail> details = new ArrayList<>();
+    // Relasi ke detail dihapus karena idPengajuanTopup bukan mapping entity (menghindari error JPA)
 
     // ── Pre-persist / pre-update hooks ────────────────────────────────────
     @PrePersist

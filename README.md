@@ -106,4 +106,4 @@ psql -U postgres -d security_db -f src/main/resources/schema.sql
 mvn spring-boot:run
 ```
 
-**Login Admin:** username `admin` / password `Admin@1234`
+**Login Admin:** username `admin` / password `  `

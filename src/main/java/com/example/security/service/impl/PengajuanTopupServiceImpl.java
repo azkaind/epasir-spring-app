@@ -122,6 +122,10 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
         // ── Update saldo_bprd di m_kartu (sama seperti service.go) ───────
         updateSaldoBprdBulk(request.getDetail(), createdBy);
 
+        // Flush agar data masuk ke DB sebelum dibaca oleh JdbcTemplate di resolveById
+        topupRepository.flush();
+        detailRepository.flush();
+
         return resolveById(saved.getId());
     }
 
@@ -165,6 +169,10 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
                 request.getDetail(), topupId);
         newDetails.forEach(d -> d.setIdPengajuanTopup(topupId.toString()));
         detailRepository.saveAll(newDetails);
+
+        // Flush agar data masuk ke DB sebelum dibaca oleh JdbcTemplate di resolveById
+        topupRepository.flush();
+        detailRepository.flush();
 
         return resolveById(topupId);
     }
