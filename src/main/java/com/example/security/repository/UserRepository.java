@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -21,16 +22,25 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByEmail(String email);
 
     // ── Pencarian & Filter ────────────────────────────────────────────────
-    @Query("""
+    @Query(value = """
         SELECT u FROM User u
-        WHERE (:search IS NULL OR
+        WHERE (:search = '' OR
                LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')) OR
                LOWER(u.email)    LIKE LOWER(CONCAT('%', :search, '%')) OR
                LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
           AND (:roleId IS NULL OR u.role.id = :roleId)
           AND (:enabled IS NULL OR u.enabled = :enabled)
-    """)
-    Page<User> searchUsers(String search, UUID roleId, Boolean enabled, Pageable pageable);
+        """,
+        countQuery = """
+        SELECT COUNT(u) FROM User u
+        WHERE (:search = '' OR
+               LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(u.email)    LIKE LOWER(CONCAT('%', :search, '%')) OR
+               LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+          AND (:roleId IS NULL OR u.role.id = :roleId)
+          AND (:enabled IS NULL OR u.enabled = :enabled)
+        """)
+    Page<User> searchUsers(@Param("search") String search, @Param("roleId") UUID roleId, @Param("enabled") Boolean enabled, Pageable pageable);
 
     long countByRole(AppRole role);
 

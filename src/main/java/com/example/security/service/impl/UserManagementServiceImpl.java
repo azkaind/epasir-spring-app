@@ -41,7 +41,8 @@ public class UserManagementServiceImpl {
 
     @Transactional(readOnly = true)
     public Page<UserDetailResponse> getUsers(String search, UUID roleId, Boolean enabled, Pageable pageable) {
-        return userRepository.searchUsers(search, roleId, enabled, pageable)
+        String searchParam = search == null ? "" : search;
+        return userRepository.searchUsers(searchParam, roleId, enabled, pageable)
                 .map(u -> UserDetailResponse.from(u, 0));
     }
 
