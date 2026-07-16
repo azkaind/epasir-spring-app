@@ -77,6 +77,7 @@ C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\sec
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\dto\request\CheckSaldoVaRequest.java
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\dto\response\PagedResponse.java
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\repository\WajibPajakRepository.java
+C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\config\CacheAndEtagConfig.java
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\repository\WajibPajakQueryRepository.java
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\controller\UserManagementController.java
 C:\laragon\www\epasir-sistembaru\epasir-spring-app\src\main\java\com\example\security\dto\response\KartuImportPreviewItem.java

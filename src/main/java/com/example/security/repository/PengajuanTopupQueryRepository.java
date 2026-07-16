@@ -3,6 +3,7 @@ package com.example.security.repository;
 import com.example.security.dto.response.PengajuanTopupDetailResponse;
 import com.example.security.dto.response.PengajuanTopupResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -12,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Repository untuk query native yang membutuhkan JOIN multi-tabel
@@ -22,43 +24,12 @@ import java.util.List;
  */
 @Repository
 @RequiredArgsConstructor
+@Slf4j
 public class PengajuanTopupQueryRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    // ── Base SELECT ──────────────────────────────────────────────────────
-    private static final String SELECT_DTO = """
-        SELECT
-            pt.id,
-            pt.tanggal,
-            pt.nomor,
-            pt.id_wp,
-            pt.nominal,
-            pt.file_bukti,
-            pt.created_at,
-            pt.created_by,
-            pt.updated_at,
-            pt.updated_by,
-            pt.is_deleted,
-            pt.status,
-            pt.verified_at,
-            wp.nama_wp,
-            wp.iup_uop,
-            wp.npwp,
-            COALESCE(dt.jml_belum_topup, 0) AS jml_belum_topup,
-            COALESCE(dt.jml_sudah_topup, 0) AS jml_sudah_topup,
-            COALESCE(dt.jml_belum_topup, 0) + COALESCE(dt.jml_sudah_topup, 0) AS total_topup
-        FROM public.t_pengajuan_topup pt
-        LEFT JOIN m_wajib_pajak wp ON wp.id = pt.id_wp
-        LEFT JOIN (
-            SELECT
-                id_pengajuan_topup,
-                COALESCE(SUM(CASE WHEN status_approve_bjtm = '1' THEN 1 ELSE 0 END), 0) AS jml_belum_topup,
-                COALESCE(SUM(CASE WHEN status_approve_bjtm = '2' THEN 1 ELSE 0 END), 0) AS jml_sudah_topup
-            FROM public.t_pengajuan_topup_detail
-            GROUP BY id_pengajuan_topup
-        ) dt ON dt.id_pengajuan_topup = pt.id
-        """;
+    // ── Base SELECT (Dihapus karena sudah diganti query per-method yang lebih efisien) ──
 
     private static final String SELECT_DETAIL = """
         SELECT
@@ -120,24 +91,14 @@ public class PengajuanTopupQueryRepository {
     // ── Public methods ────────────────────────────────────────────────────
 
     /**
-     * Hitung total data + total rupiah untuk pagination meta.
+     * Hitung total data + total rupiah dalam satu query (menghindari double execution).
      */
-    public long countAll(String keyword, String startDate, String endDate, String idWp) {
-        String sql = "SELECT COUNT(x.id) FROM (" + SELECT_DTO
-                + buildWhere(keyword, startDate, endDate, idWp) + ") x";
+    public Map<String, Object> countAndSum(String keyword, String startDate, String endDate, String idWp) {
+        String sql = "SELECT COUNT(pt.id) AS total_data, COALESCE(SUM(pt.nominal), 0) AS total_rupiah "
+                + "FROM public.t_pengajuan_topup pt LEFT JOIN m_wajib_pajak wp ON wp.id = pt.id_wp "
+                + buildWhere(keyword, startDate, endDate, idWp);
         MapSqlParameterSource params = buildParams(keyword, startDate, endDate, idWp);
-        Long count = jdbc.queryForObject(sql, params, Long.class);
-        return count != null ? count : 0L;
-    }
-
-    /**
-     * Hitung total nominal untuk pagination meta.
-     */
-    public Double sumNominal(String keyword, String startDate, String endDate, String idWp) {
-        String sql = "SELECT COALESCE(SUM(x.nominal), 0) FROM (" + SELECT_DTO
-                + buildWhere(keyword, startDate, endDate, idWp) + ") x";
-        MapSqlParameterSource params = buildParams(keyword, startDate, endDate, idWp);
-        return jdbc.queryForObject(sql, params, Double.class);
+        return jdbc.queryForMap(sql, params);
     }
 
     /**
@@ -151,27 +112,77 @@ public class PengajuanTopupQueryRepository {
                                                 String sortType,
                                                 int pageSize,
                                                 int pageNumber) {
-        String orderCol = resolveOrderColumn(sortBy);
-        String order    = "DESC".equalsIgnoreCase(sortType) ? "DESC" : "ASC";
-        int    offset   = (pageNumber - 1) * pageSize;
+        String orderCol   = resolveOrderColumn(sortBy);
+        String order      = "DESC".equalsIgnoreCase(sortType) ? "DESC" : "ASC";
+        int    offset     = (pageNumber - 1) * pageSize;
+        String orderAlias = orderCol.replace("pt.", "").replace("wp.", "");
+        String where      = buildWhere(keyword, startDate, endDate, idWp);
 
-        String sql = SELECT_DTO
-                + buildWhere(keyword, startDate, endDate, idWp)
+        // CTE: ambil ID halaman terlebih dahulu (LIMIT/OFFSET), baru agregasi detail via LATERAL
+        String sql = "WITH paginated_pt AS ("
+                + " SELECT pt.id, pt.tanggal, pt.nomor, pt.id_wp, pt.nominal, pt.file_bukti,"
+                + "        pt.created_at, pt.created_by, pt.updated_at, pt.updated_by,"
+                + "        pt.is_deleted, pt.status, pt.verified_at,"
+                + "        wp.nama_wp, wp.iup_uop, wp.npwp"
+                + " FROM public.t_pengajuan_topup pt"
+                + " LEFT JOIN m_wajib_pajak wp ON wp.id = pt.id_wp"
+                + where
                 + " ORDER BY " + orderCol + " " + order
-                + " LIMIT :limit OFFSET :offset";
+                + " LIMIT :limit OFFSET :offset"
+                + ")"
+                + " SELECT p.*,"
+                + "     COALESCE(dt.jml_belum_topup, 0) AS jml_belum_topup,"
+                + "     COALESCE(dt.jml_sudah_topup, 0) AS jml_sudah_topup,"
+                + "     COALESCE(dt.jml_belum_topup, 0) + COALESCE(dt.jml_sudah_topup, 0) AS total_topup"
+                + " FROM paginated_pt p"
+                + " LEFT JOIN LATERAL ("
+                + "     SELECT"
+                + "         SUM(CASE WHEN status_approve_bjtm = '1' THEN 1 ELSE 0 END) AS jml_belum_topup,"
+                + "         SUM(CASE WHEN status_approve_bjtm = '2' THEN 1 ELSE 0 END) AS jml_sudah_topup"
+                + "     FROM public.t_pengajuan_topup_detail"
+                + "     WHERE id_pengajuan_topup = p.id"
+                + " ) dt ON true"
+                + " ORDER BY p." + orderAlias + " " + order;
+
+        log.debug("[findAll] SQL: {}", sql);
 
         MapSqlParameterSource params = buildParams(keyword, startDate, endDate, idWp)
                 .addValue("limit",  pageSize)
                 .addValue("offset", offset);
 
-        return jdbc.query(sql, params, DTO_MAPPER);
+        try {
+            return jdbc.query(sql, params, DTO_MAPPER);
+        } catch (Exception e) {
+            log.error("[findAll] Query gagal: {}", e.getMessage(), e);
+            throw e;
+        }
     }
+
+
 
     /**
      * Ambil satu record dengan join (untuk ResolveByID).
      */
     public PengajuanTopupResponse findDtoById(String id) {
-        String sql = SELECT_DTO + " WHERE pt.id = :id";
+        String sql = """
+            SELECT pt.id, pt.tanggal, pt.nomor, pt.id_wp, pt.nominal, pt.file_bukti,
+                   pt.created_at, pt.created_by, pt.updated_at, pt.updated_by,
+                   pt.is_deleted, pt.status, pt.verified_at,
+                   wp.nama_wp, wp.iup_uop, wp.npwp,
+                   COALESCE(dt.jml_belum_topup, 0) AS jml_belum_topup,
+                   COALESCE(dt.jml_sudah_topup, 0) AS jml_sudah_topup,
+                   COALESCE(dt.jml_belum_topup, 0) + COALESCE(dt.jml_sudah_topup, 0) AS total_topup
+            FROM public.t_pengajuan_topup pt
+            LEFT JOIN m_wajib_pajak wp ON wp.id = pt.id_wp
+            LEFT JOIN LATERAL (
+                SELECT
+                    SUM(CASE WHEN status_approve_bjtm = '1' THEN 1 ELSE 0 END) AS jml_belum_topup,
+                    SUM(CASE WHEN status_approve_bjtm = '2' THEN 1 ELSE 0 END) AS jml_sudah_topup
+                FROM public.t_pengajuan_topup_detail
+                WHERE id_pengajuan_topup = pt.id
+            ) dt ON true
+            WHERE pt.id = :id
+            """;
         MapSqlParameterSource params = new MapSqlParameterSource("id", id);
         List<PengajuanTopupResponse> result = jdbc.query(sql, params, DTO_MAPPER);
         return result.isEmpty() ? null : result.get(0);
@@ -203,11 +214,11 @@ public class PengajuanTopupQueryRepository {
         StringBuilder sb = new StringBuilder(" WHERE COALESCE(pt.is_deleted, false) = false ");
 
         if (keyword != null && !keyword.isBlank()) {
-            sb.append(" AND CONCAT(wp.nama_wp, pt.nomor, pt.nominal) ILIKE :keyword ");
+            sb.append(" AND (wp.nama_wp ILIKE :keyword OR pt.nomor ILIKE :keyword OR CAST(pt.nominal AS TEXT) ILIKE :keyword) ");
         }
         if (startDate != null && !startDate.isBlank()
                 && endDate != null && !endDate.isBlank()) {
-            sb.append(" AND pt.tanggal >= CAST(:startDate AS date) AND pt.tanggal <= CAST(:endDate AS date) ");
+            sb.append(" AND pt.tanggal >= :startDate AND pt.tanggal <= :endDate ");
         }
         if (idWp != null && !idWp.isBlank()) {
             sb.append(" AND pt.id_wp = :idWp ");
@@ -221,9 +232,22 @@ public class PengajuanTopupQueryRepository {
         if (keyword != null && !keyword.isBlank()) {
             p.addValue("keyword", "%" + keyword + "%");
         }
-        if (startDate != null && !startDate.isBlank()) p.addValue("startDate", startDate);
-        if (endDate   != null && !endDate.isBlank())   p.addValue("endDate",   endDate);
-        if (idWp      != null && !idWp.isBlank())      p.addValue("idWp",      idWp);
+        if (startDate != null && !startDate.isBlank()) {
+            // Kirim sebagai java.sql.Date agar PostgreSQL tidak perlu cast dari varchar ke date
+            try {
+                p.addValue("startDate", java.sql.Date.valueOf(startDate));
+            } catch (IllegalArgumentException e) {
+                log.warn("[buildParams] Format startDate tidak valid: {}, diabaikan.", startDate);
+            }
+        }
+        if (endDate != null && !endDate.isBlank()) {
+            try {
+                p.addValue("endDate", java.sql.Date.valueOf(endDate));
+            } catch (IllegalArgumentException e) {
+                log.warn("[buildParams] Format endDate tidak valid: {}, diabaikan.", endDate);
+            }
+        }
+        if (idWp != null && !idWp.isBlank()) p.addValue("idWp", idWp);
         return p;
     }
 

@@ -123,6 +123,7 @@ com\example\security\dto\response\AuthResponse$AuthResponseBuilder.class
 com\example\security\dto\request\PengajuanTopupDetailRequest.class
 com\example\security\repository\PengajuanTopupRepository.class
 com\example\security\service\KartuService.class
+com\example\security\config\CacheAndEtagConfig.class
 com\example\security\exception\GlobalExceptionHandler.class
 com\example\security\repository\PengajuanTopupDetailRepository.class
 com\example\security\dto\response\PengajuanTopupDetailResponse.class

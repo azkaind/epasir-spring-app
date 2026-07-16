@@ -10,6 +10,8 @@ import com.example.security.repository.WajibPajakQueryRepository;
 import com.example.security.repository.WajibPajakRepository;
 import com.example.security.service.WajibPajakService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,7 @@ public class WajibPajakServiceImpl implements WajibPajakService {
     }
 
     @Override @Transactional(readOnly = true)
+    @Cacheable("wajibPajakDropdown")
     public List<WajibPajakDropdownResponse> getAll() {
         return wpRepository.findAllByIsDeletedFalseOrderByNamaWpAsc()
                 .stream()
@@ -54,6 +57,7 @@ public class WajibPajakServiceImpl implements WajibPajakService {
     }
 
     @Override
+    @CacheEvict(value = "wajibPajakDropdown", allEntries = true)
     public WajibPajakResponse create(WajibPajakRequest req, String userId) {
         WajibPajak entity = WajibPajak.builder()
                 .kodeBprd(req.getKodeBprd())
@@ -76,6 +80,7 @@ public class WajibPajakServiceImpl implements WajibPajakService {
     }
 
     @Override
+    @CacheEvict(value = "wajibPajakDropdown", allEntries = true)
     public WajibPajakResponse update(UUID id, WajibPajakRequest req, String userId) {
         WajibPajak existing = wpRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Wajib Pajak dengan ID: " + id + " tidak ditemukan"));
@@ -97,6 +102,7 @@ public class WajibPajakServiceImpl implements WajibPajakService {
     }
 
     @Override
+    @CacheEvict(value = "wajibPajakDropdown", allEntries = true)
     public void softDelete(UUID id, String userId) {
         WajibPajak existing = wpRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("Wajib Pajak dengan ID: " + id + " tidak ditemukan"));

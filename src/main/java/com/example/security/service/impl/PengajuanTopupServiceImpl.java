@@ -27,13 +27,15 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional
 public class PengajuanTopupServiceImpl implements PengajuanTopupService {
 
     private final PengajuanTopupRepository       topupRepository;
@@ -55,8 +57,9 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
                                                             String sortType,
                                                             int    pageSize,
                                                             int    pageNumber) {
-        long   totalData   = queryRepository.countAll(keyword, startDate, endDate, idWp);
-        Double totalRupiah = queryRepository.sumNominal(keyword, startDate, endDate, idWp);
+        Map<String, Object> totals = queryRepository.countAndSum(keyword, startDate, endDate, idWp);
+        long   totalData   = ((Number) totals.getOrDefault("total_data", 0L)).longValue();
+        Double totalRupiah = ((Number) totals.getOrDefault("total_rupiah", 0.0)).doubleValue();
 
         if (totalData == 0) {
             return PagedResponse.of(List.of(), pageNumber, pageSize, 0L, 0.0);
@@ -87,6 +90,7 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
 
     // ── create ────────────────────────────────────────────────────────────
     @Override
+    @Transactional
     public PengajuanTopupResponse create(PengajuanTopupRequest request, String createdBy) {
         String status = (request.getStatus() != null && !request.getStatus().isBlank())
                         ? request.getStatus()
@@ -131,6 +135,7 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
 
     // ── update ────────────────────────────────────────────────────────────
     @Override
+    @Transactional
     public PengajuanTopupResponse update(PengajuanTopupRequest request, String updatedBy) {
         UUID topupId = parseUUID(request.getId(),
                 "ID pengajuan top-up tidak valid: " + request.getId());
@@ -179,6 +184,7 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
 
     // ── softDelete ────────────────────────────────────────────────────────
     @Override
+    @Transactional
     public void softDelete(UUID id, String deletedBy) {
         if (!topupRepository.existsById(id)) {
             throw new UserNotFoundException(
@@ -189,6 +195,7 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
 
     // ── updateStatus ──────────────────────────────────────────────────────
     @Override
+    @Transactional
     public void updateStatus(UpdateStatusTopupRequest request) {
         UUID topupId = parseUUID(request.getId(),
                 "ID pengajuan top-up tidak valid: " + request.getId());
@@ -205,37 +212,31 @@ public class PengajuanTopupServiceImpl implements PengajuanTopupService {
     // ── approvalTopup ─────────────────────────────────────────────────────
     @Override
     public List<PengajuanTopupDetailResponse> approvalTopup(ApprovalTopupRequest request) {
-        List<PengajuanTopupDetailResponse> result = new ArrayList<>();
+        List<CompletableFuture<PengajuanTopupDetailResponse>> futures = request.getData().stream()
+                .map(item -> CompletableFuture.supplyAsync(() -> processApprovalItem(item)))
+                .collect(Collectors.toList());
 
-        for (ApprovalTopupRequest.ApprovalTopupDetailRequest item : request.getData()) {
-            // Cari detail
-            PengajuanTopupDetailResponse detailDto =
-                    queryRepository.findDetailById(item.getId());
+        return futures.stream()
+                .map(CompletableFuture::join)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
 
-            boolean found = detailDto != null;
+    private PengajuanTopupDetailResponse processApprovalItem(ApprovalTopupRequest.ApprovalTopupDetailRequest item) {
+        PengajuanTopupDetailResponse detailDto = queryRepository.findDetailById(item.getId());
+        boolean found = detailDto != null;
 
-            // Panggil API Bank Jatim untuk cek saldo VA
-            String rawResp  = bankJatimClient.cekSaldoVA(item.getNoVa());
-            boolean apiOk   = rawResp != null;
-            double  nominal = apiOk ? bankJatimClient.parseNominal(rawResp) : 0.0;
+        String rawResp  = bankJatimClient.cekSaldoVA(item.getNoVa());
+        boolean apiOk   = rawResp != null;
+        double  nominal = apiOk ? bankJatimClient.parseNominal(rawResp) : 0.0;
 
-            // Update ke "2" (sudah ditopup) jika kondisi terpenuhi
-            if (apiOk && found && nominal > 0
-                    && "1".equals(detailDto.getStatusApproveBjtm())) {
-                LocalDateTime now = LocalDateTime.now();
-                UUID detailId = UUID.fromString(item.getId());
-                detailRepository.updateStatusApproveBjtm(detailId, "2", now);
-
-                // Refresh DTO agar statusApproveBjtm tercermin
-                detailDto = queryRepository.findDetailById(item.getId());
-            }
-
-            if (detailDto != null) {
-                result.add(detailDto);
-            }
+        if (apiOk && found && nominal > 0 && "1".equals(detailDto.getStatusApproveBjtm())) {
+            LocalDateTime now = LocalDateTime.now();
+            UUID detailId = UUID.fromString(item.getId());
+            detailRepository.updateStatusApproveBjtm(detailId, "2", now);
+            detailDto = queryRepository.findDetailById(item.getId());
         }
-
-        return result;
+        return detailDto;
     }
 
     // ── checkSaldoVa ──────────────────────────────────────────────────────

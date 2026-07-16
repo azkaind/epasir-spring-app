@@ -10,6 +10,8 @@ import com.example.security.repository.KomoditasQueryRepository;
 import com.example.security.repository.KomoditasRepository;
 import com.example.security.service.KomoditasService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,7 @@ public class KomoditasServiceImpl implements KomoditasService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable("komoditasDropdown")
     public List<KomoditasDropdownResponse> getAll() {
 
         return komoditasRepository
@@ -82,6 +85,7 @@ public class KomoditasServiceImpl implements KomoditasService {
     }
 
     @Override
+    @CacheEvict(value = "komoditasDropdown", allEntries = true)
     public KomoditasResponse create(
             KomoditasRequest request,
             String userId) {
@@ -106,6 +110,7 @@ public class KomoditasServiceImpl implements KomoditasService {
     }
 
     @Override
+    @CacheEvict(value = "komoditasDropdown", allEntries = true)
     public KomoditasResponse update(
             UUID id,
             KomoditasRequest request,
@@ -134,6 +139,7 @@ public class KomoditasServiceImpl implements KomoditasService {
     }
 
     @Override
+    @CacheEvict(value = "komoditasDropdown", allEntries = true)
     public void softDelete(UUID id, String userId) {
 
         Komoditas existing = komoditasRepository.findById(id)
