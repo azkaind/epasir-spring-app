@@ -80,6 +80,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional(noRollbackFor = {BadCredentialsException.class, LockedException.class})
     public AuthResponse login(LoginRequest request, HttpServletRequest httpRequest) {
         String ip = getClientIp(httpRequest);
         User user = userRepository.findByUsername(request.getUsername())
@@ -150,24 +151,31 @@ public class AuthServiceImpl implements AuthService {
                 auditService.log(user.getUsername(), "LOGIN", ip, "BLOCKED", "Akun terkunci");
                 throw new LockedException("Akun dikunci. Coba lagi pada " + unlockTime);
             } else {
-                userRepository.resetFailedAttempts(user.getUsername());
+                // Masa kunci sudah berakhir — reset di DB dan update objek lokal
                 user.setAccountNonLocked(true);
+                user.setFailedLoginAttempts(0);
+                user.setLockTime(null);
+                userRepository.save(user);
             }
         }
     }
 
     private void handleFailedLogin(User user, String ip) {
-        userRepository.incrementFailedAttempts(user.getUsername());
-        int attempts = user.getFailedLoginAttempts() + 1;
-        if (attempts >= maxLoginAttempts) {
+        // Increment langsung pada objek entity (bukan query @Modifying terpisah)
+        // agar nilai terbaru tidak tertimpa saat save() dipanggil
+        int newAttempts = user.getFailedLoginAttempts() + 1;
+        user.setFailedLoginAttempts(newAttempts);
+
+        if (newAttempts >= maxLoginAttempts) {
             user.setAccountNonLocked(false);
             user.setLockTime(LocalDateTime.now());
             userRepository.save(user);
             auditService.log(user.getUsername(), "ACCOUNT_LOCKED", ip, "SYSTEM",
-                    "Akun dikunci setelah " + attempts + " percobaan gagal");
+                    "Akun dikunci setelah " + newAttempts + " percobaan gagal");
         } else {
+            userRepository.save(user);
             auditService.log(user.getUsername(), "LOGIN", ip, "FAILED",
-                    "Percobaan ke-" + attempts + " dari " + maxLoginAttempts);
+                    "Percobaan ke-" + newAttempts + " dari " + maxLoginAttempts);
         }
     }
 
